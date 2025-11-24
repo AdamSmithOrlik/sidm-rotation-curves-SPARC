@@ -1,0 +1,9 @@
+24/11/25
+Reading the SPARC Master paper 
+- M/L ratio for the sparc dataset is 1.
+- Quality factor: 1 best, 3 worst. 3 are too poor to use for mass modelling.
+    - Need to make a list of good halos on which to do analysis
+- Downloaded two meta-data files, saved in data, describing the galaxy properties and the mass model results. 
+- Write some code to read in the data (need to remove headers and provide titles)
+
+- Could look into the dark matter model papers to see how they set up their analysis and copy it
