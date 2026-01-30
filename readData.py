@@ -168,7 +168,7 @@ def get_ML_data(galaxy_id):
     return df, units_df
 
 
-def Gamma(galaxy):
+def Gamma_disk(galaxy):
     """
     Calculates disk mass-to-light ratio Gamma from Eq 10 arXiv:2601.17118
     using catalogs from arXiv:2001.10538 accessed from SPARC database.
@@ -194,15 +194,32 @@ def Gamma(galaxy):
     return gamma, sigma_eff
 
 
-def Gamma_disk(galaxy):
-    return Gamma(galaxy)
-
-
 def Gamma_bulge(galaxy):
-    gamma_disk, sigma_disk = Gamma(galaxy)
-    gamma_bulge = 1.4 * gamma_disk
-    sigma_bulge = 1.4 * sigma_disk
-    return gamma_bulge, sigma_bulge
+    """
+    Calculates bulge mass-to-light ratio Gamma from Eq 10 arXiv:2601.17118
+    using catalogs from arXiv:2001.10538 accessed from SPARC database.
+    Takes:
+        galaxy : galaxy ID string
+    Returns:
+        gamma : mass-to-light ratio scaling factor for bulge
+        sigma_eff : uncertainty in gamma
+    """
+    df, _ = get_ML_data(galaxy)
+    if df["Ybul"].all() == 0:
+        return 0.0, 0.0
+    numerator = np.sum(df["Ybul"] / df["e_Ybul"] ** 2)
+    denominator = np.sum(1 / df["e_Ybul"] ** 2)
+    gamma = np.divide(numerator, denominator)
+
+    # uncertainty in gamma
+    sigma_gamma_sq = 1 / denominator
+
+    # add spread in Ybulge values since Gamma_i are correlated
+    w = 1 / df["e_Ybul"] ** 2
+    spread_sq = np.sum(w * (df["Ybul"] - gamma) ** 2) / np.sum(w)
+    sigma_eff = np.sqrt(sigma_gamma_sq + spread_sq)
+
+    return gamma, sigma_eff
 
 
 # for testing
