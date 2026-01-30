@@ -100,11 +100,117 @@ def get_mass_data(galaxy_id):
     return galaxy_row, units_df
 
 
+def get_ML_data(galaxy_id):
+
+    filename = path + f"Fits/ByGalaxy/Table/{galaxy_id}.mrt"
+
+    names = [
+        "Model",
+        "Ydisk",
+        "e_Ydisk",
+        "Ybul",
+        "e_Ybul",
+        "D",
+        "e_D",
+        "inc",
+        "e_inc",
+        "V200",
+        "e_V200",
+        "C200",
+        "e_C200",
+        "rs",
+        "e_rs",
+        "log_rhos",
+        "e_log_rhos",
+        "log_M200",
+        "e_log_M200",
+        "alpha",
+        "e_alpha",
+        "Chi",
+    ]
+
+    units = [
+        "",  # Model
+        "",  # Ydisk
+        "",  # e_Ydisk
+        "",  # Ybul
+        "",  # e_Ybul
+        "Mpc",  # D
+        "Mpc",  # e_D
+        "deg",  # inc
+        "deg",  # e_inc
+        "km/s",  # V200
+        "km/s",  # e_V200
+        "",  # C200
+        "",  # e_C200
+        "kpc",  # rs
+        "kpc",  # e_rs
+        "Msun/pc^3",  # log_rhos
+        "Msun/pc^3",  # e_log_rhos
+        "Msun",  # log_M200
+        "Msun",  # e_log_M200
+        "",  # alpha
+        "",  # e_alpha
+        "",  # Chi
+    ]
+
+    df = pd.read_csv(
+        filename,
+        sep=r"\s+",
+        skiprows=34,
+        header=None,
+        names=names,
+        engine="python",
+    )
+
+    units_df = pd.DataFrame([units], columns=names)
+
+    return df, units_df
+
+
+def Gamma(galaxy):
+    """
+    Calculates disk mass-to-light ratio Gamma from Eq 10 arXiv:2601.17118
+    using catalogs from arXiv:2001.10538 accessed from SPARC database.
+    Takes:
+        galaxy : galaxy ID string
+    Returns:
+        gamma : mass-to-light ratio scaling factor for disk
+        sigma_eff : uncertainty in gamma
+    """
+    df, _ = get_ML_data(galaxy)
+    numerator = np.sum(df["Ydisk"] / df["e_Ydisk"] ** 2)
+    denominator = np.sum(1 / df["e_Ydisk"] ** 2)
+    gamma = np.divide(numerator, denominator)
+
+    # uncertainty in gamma
+    sigma_gamma_sq = 1 / denominator
+
+    # add spread in Ydisk values since Gamma_i are correlated
+    w = 1 / df["e_Ydisk"] ** 2
+    spread_sq = np.sum(w * (df["Ydisk"] - gamma) ** 2) / np.sum(w)
+    sigma_eff = np.sqrt(sigma_gamma_sq + spread_sq)
+
+    return gamma, sigma_eff
+
+
+def Gamma_disk(galaxy):
+    return Gamma(galaxy)
+
+
+def Gamma_bulge(galaxy):
+    gamma_disk, sigma_disk = Gamma(galaxy)
+    gamma_bulge = 1.4 * gamma_disk
+    sigma_bulge = 1.4 * sigma_disk
+    return gamma_bulge, sigma_bulge
+
+
 # for testing
 def main():
-    d, u = get_mass_data("NGC5371")
-    print(d)
-    print(u)
+    gd, ed = Gamma_disk("NGC5371")
+    gb, eb = Gamma_bulge("NGC5371")
+    print(f"Disk Gamma: {gd} +/- {ed}")
+    print(f"Bulge Gamma: {gb} +/- {eb}")
 
     return None
 
