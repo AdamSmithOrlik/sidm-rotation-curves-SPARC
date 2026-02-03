@@ -20,13 +20,13 @@ def hernquist_model(r, M_b=1e10, a=1):
     Returns:
         Vc : circular velocity at radius r [km/s]
     """
-    G = 4.30091e-6  # [kpc * (km/s)^2/ solar mass]
+    G = 4.30091e-6  # [kpc * (km/s)^2 / solar mass]
     vc = np.sqrt(G * M_b * r) / (r + a)
     return vc
 
 
 # Total baryonic circular velocity
-def vc_baryons(data, gamma_star=1.0):
+def vc_baryons(data, gamma_star=0.5, gamma_bulge=0.7):
     """
     Total baryonic circular velocity.
     Takes:
@@ -37,7 +37,6 @@ def vc_baryons(data, gamma_star=1.0):
         radii : radius [kpc]
     """
     radii = data["Rad"].values
-    gamma_bulge = 1.4 * gamma_star  # bulge mass-to-light ratio scaling factor
     vc_disk_sq = gamma_star * data["Vdisk"] ** 2
     vc_bulge_sq = gamma_bulge * data["Vbul"] ** 2
     vc_gas_sq = data["Vgas"] ** 2
@@ -51,18 +50,21 @@ def vc_baryons(data, gamma_star=1.0):
 ###################### HERNQUIST FIT CLASS ########################
 ###################################################################
 class HernquistFit:
-    def __init__(self, galaxy_id, gamma_star=1.0, method="lmfit"):
+    def __init__(self, galaxy_id, gamma_star=0.5, gamma_bulge=0.7, method="lmfit"):
         self.galaxy_id = galaxy_id
         self.data, _, _ = get_rc_data(galaxy_id)
         self.gamma_star = gamma_star  # mass-to-light ratio scaling factor
-        self.r_vals, self.vc_baryons = vc_baryons(self.data, self.gamma_star)
+        self.gamma_bulge = gamma_bulge  # bulge mass-to-light ratio scaling factor
+        self.r_vals, self.vc_baryons = vc_baryons(
+            self.data, self.gamma_star, self.gamma_bulge
+        )
         self.method = method
 
         if method not in ["lmfit", "curve_fit"]:
             raise ValueError("HernquistFit 'method' supports 'lmfit' or 'curve_fit'")
 
         # Perform the fit upon initialization
-        self.M_b_fit, self.a_fit = self.perform_fit()
+        self.M_b_fit, self.a_fit, self.error = self.perform_fit()
 
     def perform_fit(self):
         if self.method == "lmfit":
@@ -71,27 +73,27 @@ class HernquistFit:
                 # time the fit method
                 start = t.time()
                 # create the lmfit model
-                self.model = Model(hernquist_model)
-                params = self.model.make_params(M_b=1e10, a=1)
+                model = Model(hernquist_model)
+                params = model.make_params(M_b=1e10, a=1)
                 r_eval = self.r_vals
                 y_eval = self.vc_baryons
                 # perform the fit
-                self.result = self.model.fit(y_eval, params, r=r_eval)
+                self.result = model.fit(y_eval, params, r=r_eval)
+
+                M_b_fit = self.result.params["M_b"].value
+                a_fit = self.result.params["a"].value
+                error = self.result.chisqr
             except Exception as e:
                 print(f"Error fitting galaxy {self.galaxy_id} with lmfit: {e}")
-                self.M_b_fit, self.a_fit = np.nan, np.nan
-                self.chisqr = np.nan
+                M_b_fit, a_fit = np.nan, np.nan
+                error = np.nan
 
             print(f"Fitting with lmfit took {t.time() - start:.4f} seconds")
-
-            M_b_fit = self.result.params["M_b"].value
-            a_fit = self.result.params["a"].value
-            chisqr = self.result.chisqr
 
             print(f"Fitted parameters for galaxy {self.galaxy_id} using lmfit:")
             print(f"  M_b = {M_b_fit:.2e} solar masses")
             print(f"  a   = {a_fit:.2f} kpc")
-            print(f"  chi-squared = {chisqr:.4f}")
+            print(f"  chi-squared = {error:.4f}")
 
         elif self.method == "curve_fit":
 
@@ -106,18 +108,18 @@ class HernquistFit:
                 print(f"Fitting with curve_fit took {t.time() - start:.4f} seconds")
 
                 M_b_fit, a_fit = popt
-                self.pcov = pcov
+                error = pcov
             except RuntimeError as e:
                 print(f"Error fitting galaxy {self.galaxy_id} with curve_fit: {e}")
-                self.M_b_fit, self.a_fit = np.nan, np.nan
-                self.pcov = None
+                M_b_fit, a_fit = np.nan, np.nan
+                error = None
 
             print(f"Fitted parameters for galaxy {self.galaxy_id} using curve_fit:")
             print(f"  M_b = {M_b_fit:.2e} solar masses")
             print(f"  a   = {a_fit:.2f} kpc")
-            print(f"  Parameter covariance matrix:\n{self.pcov}")
+            print(f"  Parameter covariance matrix:\n{error}")
 
-        return M_b_fit, a_fit
+        return M_b_fit, a_fit, error
 
     # Method to compute vc and phi using fitted parameters
     def vc(self, r):
@@ -131,7 +133,7 @@ class HernquistFit:
         return hernquist_model(r, M_b=self.M_b_fit, a=self.a_fit)
 
     # Method to compute gravitational potential using fitted parameters in terms of (r,th) for the jeans model
-    def phi(self, r):
+    def phi(self):
         """
         Creates the Hernquist gravitational potential model using the fitted parameters.
         Takes:
