@@ -53,6 +53,7 @@ def get_Mb_data(galaxy_id):
     # stellar mass
     M_disk = gamma_disk * L36  # solar masses
     err_disk = np.sqrt((err_disk * L36) ** 2 + (gamma_disk * err_L36) ** 2)
+    # Removed Bulge mass for now
     # M_bulge = gamma_bulge * L36  # solar masses
     # err_bulge = np.sqrt((err_bulge * L36) ** 2 + (gamma_bulge * err_L36) ** 2)
     M_bulge = 0.0
