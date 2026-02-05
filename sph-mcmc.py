@@ -8,7 +8,9 @@ import time as t
 
 from readData import get_rc_data
 
-GalaxyID = "F568-3"
+# GalaxyID = "F568-3"
+GalaxyID = "F571-8"
+
 
 # Load baryon fit parameters for potential calculation
 baryon_fit_data = pd.read_csv(
@@ -21,6 +23,8 @@ a_fit = baryon_data["a_fit"].values[0]  # kpc
 # Load the rotation curve data
 data, _, _ = get_rc_data(GalaxyID)
 r_data = data["Rad"].values  # kpc
+array_size = len(r_data)  # for blobs
+min_r = np.min(r_data)  # likelihood to 0 below min radius in data
 v_data = data["Vobs"].values  # km/s
 v_err = data["errV"].values  # km/s
 
@@ -96,7 +100,7 @@ def model(theta, **kwargs):
 
     phi_b = phi_Hern_sph(M_b=M_b_fit, a=a_fit)
 
-    profile = jeans.squashed(r1, M200, c, Phi_b=phi_b, verbose=False, **kwargs)
+    profile = jeans.squashed(r1, M200, c, Phi_b=phi_b, **kwargs)
 
     return profile
 
@@ -105,28 +109,32 @@ def likelihood(theta, **kwargs):
     try:
         profile = model(theta, **kwargs)
     except Exception as e:
-        print(f"Jeans model error: {e}")
-        return -np.inf  # , None, None
+        print(f"Jeans model error for theta: {theta}\nError: {e}")
+        return -np.inf, None, None
 
-    v_model = profile.V(r_data, Lmax=0)
+    try:
+        v_model = profile.V(r_data, Lmax=0)
+    except Exception as e:
+        print(f"Rotation curve calculation error for theta: {theta}\nError: {e}")
+        return -np.inf, None, None
 
     # Chi-squared
     chi_squared = np.sum(((v_data - v_model) / v_err) ** 2)
 
     log_likelihood = -0.5 * chi_squared
 
-    # cross_section = profile.cross_section()
+    cross_section = profile.cross_section()
 
-    return log_likelihood  # , cross_section, v_model
+    return log_likelihood, cross_section, v_model
 
 
 def ln_prior(theta):
     r1, logM200, dlogc = theta
 
-    r1_condition = 0.0 < r1 < 500
+    r1_condition = min_r < r1 < 500
     logM200_condition = (
-        9.0 < logM200 < 15.0
-    )  # uniform prior on logM200 between 1e9 and 1e15 Msun
+        8.0 < logM200 < 15.0
+    )  # uniform prior on logM200 between 1e8 and 1e15 Msun
 
     conditions = r1_condition and logM200_condition
 
@@ -142,16 +150,16 @@ def ln_prob(theta, **kwargs):
 
     lp = ln_prior(theta)
     if not np.isfinite(lp):
-        return -np.inf  # , None, None
+        return -np.inf, None, None
 
     try:
-        # lk, v_model, cross_section = likelihood(theta, **kwargs)
-        lk = likelihood(theta, **kwargs)
+        lk, cross_section, v_model = likelihood(theta, **kwargs)
+        # lk = likelihood(theta, **kwargs)
     except Exception as e:
-        print(f"Likelihood calculation error: {e}")
-        return -np.inf  # , None, None
+        print(f"Likelihood calculation error for theta: {theta}: {e}")
+        return -np.inf, None, None
 
-    return lp + lk  # , cross_section, v_model
+    return lp + lk, cross_section, v_model
 
 
 ######################################################################
@@ -205,12 +213,10 @@ def run_emcee(
     if resume and save:
         print(f"Resuming from existing file: {filename}")
 
-    # array_size = len(r_data)  # corresponds to the number of radii in the rotation curve
-
-    # dtypes = [
-    #     ("cross-section", float),
-    #     ("rotation-curve", float, (array_size,)),
-    # ]
+    dtypes = [
+        ("cross-section", float),
+        ("rotation-curve", float, (array_size,)),
+    ]
 
     if multiprocessing:
         with Pool(processes=cores) as pool:
@@ -230,7 +236,7 @@ def run_emcee(
                     ln_prob,
                     kwargs=relaxation_kwargs,
                     pool=pool,
-                    # blobs_dtype=dtypes,
+                    blobs_dtype=dtypes,
                     backend=backend,
                     **emcee_kwargs,
                 )
@@ -241,12 +247,14 @@ def run_emcee(
                     ln_prob,
                     kwargs=relaxation_kwargs,
                     pool=pool,
-                    # blobs_dtype=dtypes,
+                    blobs_dtype=dtypes,
                     **emcee_kwargs,
                 )
 
             print("Running production with multiprocessing...")
-            pos, prob, state = sampler.run_mcmc(p0, niter, progress=True, store=True)
+            pos, prob, state, blobs = sampler.run_mcmc(
+                p0, niter, progress=True, store=True
+            )
     else:
         if save:
             print(filename)
@@ -262,7 +270,7 @@ def run_emcee(
                 ndim,
                 ln_prob,
                 kwargs=relaxation_kwargs,
-                # blobs_dtype=dtypes,
+                blobs_dtype=dtypes,
                 backend=backend,
                 **emcee_kwargs,
             )
@@ -272,14 +280,14 @@ def run_emcee(
                 ndim,
                 ln_prob,
                 kwargs=relaxation_kwargs,
-                # blobs_dtype=dtypes,
+                blobs_dtype=dtypes,
                 **emcee_kwargs,
             )
 
         print("Running production...")
-        pos, prob, state = sampler.run_mcmc(p0, niter, progress=True, store=True)
+        pos, prob, state, blobs = sampler.run_mcmc(p0, niter, progress=True, store=True)
 
-    return sampler, pos, prob, state
+    return sampler, pos, prob, state, blobs
 
 
 def main():
@@ -288,8 +296,9 @@ def main():
 
     # relaxation_kwargs = {"AC_prescription": "Cautun"}
     relaxation_kwargs = None
-    NWALKERS = 8
+    NWALKERS = 32
     NITER = 10
+    cores = NWALKERS // 2
 
     initial_theta = [10, 11, 0.0]  # [r1, M200, dlogc]
     savepath = os.getcwd() + "/data/MCMC_results/"
@@ -304,7 +313,7 @@ def main():
         save=True,
         filename=filename,
         savepath=savepath,
-        cores=NWALKERS,
+        cores=cores,
         relaxation_kwargs=relaxation_kwargs,
     )
 

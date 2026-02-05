@@ -36,6 +36,41 @@ def get_rc_data(galaxy_id):
     return df, units_df, distance
 
 
+def get_Mb_data(galaxy_id):
+    """
+    Computes total baryonic mass M_b and its uncertainty for a given galaxy ID using SPARC data.
+
+    M_b = M_star + M_gas, where M_star is the stellar mass and M_gas is the gas mass.
+    M_star = Gamma * L36, where L36 is provided in the SPARC catalog and Gamma is the mass-to-light ratio computed by averaging over mass models.
+    M_gas = 1.33 * M_HI, where M_HI is the neutral hydrogen mass from the SPARC catalog (the factor 1.33 accounts for helium).
+    """
+    df, _ = get_mass_data(galaxy_id)
+    L36 = df["L36"].values[0] * 1e9  # convert to Lsun
+    err_L36 = df["e_L36"].values[0] * 1e9  # convert to Lsun
+    gamma_disk, err_disk = Gamma_disk(galaxy_id)
+    # gamma_bulge, err_bulge = Gamma_bulge(galaxy_id)
+
+    # stellar mass
+    M_disk = gamma_disk * L36  # solar masses
+    err_disk = np.sqrt((err_disk * L36) ** 2 + (gamma_disk * err_L36) ** 2)
+    # M_bulge = gamma_bulge * L36  # solar masses
+    # err_bulge = np.sqrt((err_bulge * L36) ** 2 + (gamma_bulge * err_L36) ** 2)
+    M_bulge = 0.0
+    err_bulge = 0.0
+    M_star = M_disk + M_bulge  # solar masses
+    err_star = np.sqrt(err_disk**2 + err_bulge**2)  # uncertainty in stellar mass
+
+    # gas mass
+    M_HI = df["MHI"].values[0] * 1e9  # convert to Msun
+    M_gas = 1.33 * M_HI  # solar masses, include helium correction
+    err_gas = 0.0  # not sure how to get uncertainty in M_gas from SPARC data
+
+    M_b = M_star + M_gas  # total baryonic mass in solar masses
+    err_Mb = np.sqrt(err_star**2 + err_gas**2)  # uncertainty in total baryonic mass
+
+    return M_b, err_Mb
+
+
 def get_mass_data(galaxy_id):
 
     filename = path + "SPARC_Lelli2016c.mrt"
