@@ -10,23 +10,25 @@ import time as t
 ######################## HELPER FUNCTIONS #########################
 ###################################################################
 # Hernquist model for circular velocity
-def hernquist_model(r, M_b=1e10, a=1):
+def hernquist_model(r, log_M_b=10, log_a=1):
     """
     Circular velocity squared for Hernquist profile.
     Takes:
         r : radius [kpc] (or array of radii)
-        M_b : total baryonic mass [solar masses]
-        a : scale radius [kpc]
+        log_M_b : log10 of total baryonic mass [solar masses]
+        log_a : log10 of scale radius [kpc]
     Returns:
         Vc : circular velocity at radius r [km/s]
     """
     G = 4.30091e-6  # [kpc * (km/s)^2 / solar mass]
-    vc = np.sqrt(G * M_b * r) / (r + a)
+    Mb = 10**log_M_b  # convert log10(M_b) to M_b in solar masses
+    a = 10**log_a  # convert log10(a) to a in kpc
+    vc = np.sqrt(G * Mb * r) / (r + a)
     return vc
 
 
 # Total baryonic circular velocity
-def vc_baryons(data, gamma_star=0.5, gamma_bulge=0.7):
+def vc_disk_gas(data, gamma_star=0.5):
     """
     Total baryonic circular velocity.
     Takes:
@@ -38,12 +40,27 @@ def vc_baryons(data, gamma_star=0.5, gamma_bulge=0.7):
     """
     radii = data["Rad"].values
     vc_disk_sq = gamma_star * data["Vdisk"] ** 2
-    vc_bulge_sq = gamma_bulge * data["Vbul"] ** 2
     vc_gas_sq = data["Vgas"] ** 2
 
-    vc_baryons = np.sqrt(vc_disk_sq + vc_bulge_sq + vc_gas_sq)
+    vc_baryons = np.sqrt(vc_disk_sq + vc_gas_sq)
 
     return radii, vc_baryons
+
+
+def vc_bulge(data, gamma_bulge=0.7):
+    """
+    Bulge circular velocity.
+    Takes:
+        data : dataframe with columns 'Vbul'
+        gamma_bulge : mass-to-light ratio scaling factor for bulge
+    Returns:
+        vc_bulge : bulge circular velocity [km/s]
+        radii : radius [kpc]
+    """
+    radii = data["Rad"].values
+    vc_bulge = np.sqrt(gamma_bulge * data["Vbul"] ** 2)
+
+    return radii, vc_bulge
 
 
 ###################################################################
@@ -55,18 +72,31 @@ class HernquistFit:
         self.data, _, _ = get_rc_data(galaxy_id)
         self.gamma_star = gamma_star  # mass-to-light ratio scaling factor
         self.gamma_bulge = gamma_bulge  # bulge mass-to-light ratio scaling factor
-        self.r_vals, self.vc_baryons = vc_baryons(
-            self.data, self.gamma_star, self.gamma_bulge
-        )
+        self.r_vals, self.vc_disk_gas = vc_disk_gas(self.data, self.gamma_star)
+        _, self.vc_bulge = vc_bulge(self.data, self.gamma_bulge)
         self.method = method
 
         if method not in ["lmfit", "curve_fit"]:
             raise ValueError("HernquistFit 'method' supports 'lmfit' or 'curve_fit'")
 
         # Perform the fit upon initialization
-        self.M_b_fit, self.a_fit, self.error = self.perform_fit()
+        self.M_b_fit, self.a_fit, self.error = self.perform_fit(
+            self.r_vals, self.vc_disk_gas
+        )
 
-    def perform_fit(self):
+        if np.any(self.vc_bulge > 0):
+            print("Bulge component detected, performing separate fit for bulge...")
+            self.M_b_fit_bulge, self.a_fit_bulge, self.error_bulge = self.perform_fit(
+                self.r_vals, self.vc_bulge
+            )
+        else:
+            self.M_b_fit_bulge, self.a_fit_bulge, self.error_bulge = (
+                np.nan,
+                np.nan,
+                np.nan,
+            )
+
+    def perform_fit(self, x, y):
         if self.method == "lmfit":
 
             try:
@@ -74,14 +104,18 @@ class HernquistFit:
                 start = t.time()
                 # create the lmfit model
                 model = Model(hernquist_model)
-                params = model.make_params(M_b=1e10, a=1)
-                r_eval = self.r_vals
-                y_eval = self.vc_baryons
+                params = model.make_params(
+                    log_M_b=10, log_a=0
+                )  # in log10 space for better convergence
+                r_eval = x
+                y_eval = y
                 # perform the fit
                 self.result = model.fit(y_eval, params, r=r_eval)
 
-                M_b_fit = self.result.params["M_b"].value
-                a_fit = self.result.params["a"].value
+                M_b_fit = (
+                    10 ** self.result.params["log_M_b"].value
+                )  # convert log10(M_b) to M_b in solar masses
+                a_fit = 10 ** self.result.params["log_a"].value
                 error = self.result.chisqr
             except Exception as e:
                 print(f"Error fitting galaxy {self.galaxy_id} with lmfit: {e}")
@@ -101,13 +135,13 @@ class HernquistFit:
                 # time the fit method
                 start = t.time()
                 # perform the curve fit
-                popt, pcov = curve_fit(
-                    hernquist_model, self.r_vals, self.vc_baryons, p0=[1e10, 1]
-                )
+                popt, pcov = curve_fit(hernquist_model, x, y, p0=[10, 0])
 
                 print(f"Fitting with curve_fit took {t.time() - start:.4f} seconds")
 
-                M_b_fit, a_fit = popt
+                log_M_b_fit, log_a_fit = popt
+                M_b_fit = 10**log_M_b_fit  # convert log10(M_b) to M_b in solar masses
+                a_fit = 10**log_a_fit  # convert log10(a) to a in kpc
                 error = pcov
             except RuntimeError as e:
                 print(f"Error fitting galaxy {self.galaxy_id} with curve_fit: {e}")
@@ -122,33 +156,38 @@ class HernquistFit:
         return M_b_fit, a_fit, error
 
     # Method to compute vc and phi using fitted parameters
-    def vc(self, r):
+    def vc(self, r, M_b=10, a=1):
         """
         Creates the Hernquist circular velocity model using the fitted parameters.
         Takes:
             r : radius [kpc] (or array of radii)
+            M_b : total baryonic mass [solar masses]
+            a : scale radius [kpc]
         Returns:
             vc : circular velocity at radius r [km/s] for best fit params
         """
-        return hernquist_model(r, M_b=self.M_b_fit, a=self.a_fit)
+        Mb = np.log10(M_b)
+        return hernquist_model(r, M_b=Mb, a=a)
 
     # Method to compute gravitational potential using fitted parameters in terms of (r,th) for the jeans model
-    def phi(self):
+    def phi(self, M_b=10, a=1):
         """
         Creates the Hernquist gravitational potential model using the fitted parameters.
         Takes:
             r : radius [kpc] (or array of radii)
+            M_b : total baryonic mass [solar masses]
+            a : scale radius [kpc]
         Returns:
             phi : gravitational potential at radius r [km^2/s^2] for best fit params
         """
         G = 4.30091e-6  # [kpc * (km/s)^2/ solar mass]
 
         def phi_func(r, th):
-            return -G * self.M_b_fit / (r + self.a_fit)
+            return -G * M_b / (r + a)
 
         return phi_func
 
-    def density(self, r):
+    def density(self, r, M_b=10, a=1):
         """
         Creates the Hernquist density profile using the fitted parameters.
         Takes:
@@ -156,12 +195,12 @@ class HernquistFit:
         Returns:
             rho : density at radius r [solar masses/kpc^3] for best fit params
         """
-        numerator = self.M_b_fit / (2 * np.pi * self.a_fit**3)
-        denominator = (r / self.a_fit) * (1 + (r / self.a_fit)) ** 3
+        numerator = M_b / (2 * np.pi * a**3)
+        denominator = (r / a) * (1 + (r / a)) ** 3
 
         return np.divide(numerator, denominator)
 
-    def mass_enclosed(self, r):
+    def mass_enclosed(self, r, M_b=10, a=1):
         """
         Creates the Hernquist enclosed mass profile using the fitted parameters.
         Takes:
@@ -169,7 +208,7 @@ class HernquistFit:
         Returns:
             M_enc : enclosed mass at radius r [solar masses] for best fit params
         """
-        numerator = self.M_b_fit * r**2
-        denominator = (r + self.a_fit) ** 2
+        numerator = M_b * r**2
+        denominator = (r + a) ** 2
 
         return np.divide(numerator, denominator)
