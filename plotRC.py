@@ -2,52 +2,60 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-import glob
-
-path = os.getcwd() + "/data/Rotmod_LTG/"
-savepath = os.getcwd() + "/plots/"
-
-# get the galaxy names from the filenames
-filenames = glob.glob(path + "*.dat")
-galaxy_IDs = [os.path.basename(f).split(".")[0] for f in filenames]
-
-
-# Helper function to read in data
-def get_data(filename):
-    with open(filename) as f:
-        lines = f.readlines()
-
-    distance = float(lines[0].lstrip("# Distance = ").strip().split()[0])
-    colnames = lines[1].lstrip("# ").split()
-    units = lines[2].lstrip("# ").split()
-
-    df = pd.read_csv(
-        filename,
-        comment="#",
-        sep=r"\s+",
-        names=colnames,
-        skiprows=2,  # skip the two # header lines
-    )
-
-    # stack colnames and units to turn into a new df
-    units_df = pd.DataFrame([units], columns=colnames)
-
-    return df, units_df, distance
+from readData import get_galaxy_ids, get_rc_data
 
 
 # plot the rotation curves for each galaxy
-for galaxy in galaxy_IDs:
-    df, units_df, distance = get_data(path + galaxy + ".dat")
+def main():
+    savepath = os.getcwd() + "/plots/rc_data/"
 
-    vc_baryons = np.sqrt(df["Vdisk"] ** 2 + df["Vbul"] ** 2 + df["Vgas"] ** 2)
+    # get the galaxy names from the filenames
+    galaxy_IDs = get_galaxy_ids()
 
-    plt.figure(figsize=(6, 4))
-    plt.scatter(df["Rad"], vc_baryons, label="Baryon Total", color="k", s=10, zorder=3)
+    # for galaxy in galaxy_IDs:
+    #     df, units_df, distance = get_rc_data(galaxy)
 
-    plt.xlabel(f"Radius (kpc)")
-    plt.ylabel(f"Velocity (km/s)")
-    plt.title(f"Galaxy {galaxy} at Distance {distance} Mpc")
-    plt.legend()
-    plt.grid(zorder=0)
-    plt.savefig(savepath + f"{galaxy}_baryon_RC.png")
-    plt.close()
+    #     vc_baryons = np.sqrt(df["Vdisk"] ** 2 + df["Vbul"] ** 2 + df["Vgas"] ** 2)
+
+    #     plt.figure(figsize=(6, 4))
+    #     plt.scatter(
+    #         df["Rad"], vc_baryons, label="Baryon Total", color="k", s=10, zorder=0
+    #     )
+    #     plt.scatter(df["Rad"], df["Vdisk"], label="Disk", color="C0", s=8)
+    #     plt.scatter(df["Rad"], df["Vbul"], label="Bulge", color="C3", s=8)
+    #     plt.scatter(df["Rad"], np.abs(df["Vgas"]), label="Gas", color="C1", s=8)
+
+    #     plt.xlabel(f"Radius (kpc)")
+    #     plt.ylabel(f"Velocity (km/s)")
+    #     plt.title(f"Galaxy {galaxy} at Distance {distance} Mpc")
+    #     plt.legend()
+    #     plt.grid()
+    #     plt.savefig(savepath + f"{galaxy}_RC.png")
+    #     plt.close()
+
+    for galaxy in galaxy_IDs:
+        df, units_df, distance = get_rc_data(galaxy)
+
+        vdisk = df["Vdisk"].values.sum(axis=0)
+        vbul = df["Vbul"].values.sum(axis=0)
+        vgas = np.abs(df["Vgas"].values).sum(axis=0)
+        vc_total = np.sqrt(vdisk**2 + vbul**2 + vgas**2).sum(axis=0)
+
+        vdisk_ratio = vdisk / vc_total
+        vbul_ratio = vbul / vc_total
+        vgas_ratio = vgas / vc_total
+
+        plt.figure(figsize=(6, 4))
+        plt.bar(
+            ["Disk", "Bulge", "Gas"],
+            [vdisk_ratio, vbul_ratio, vgas_ratio],
+            color=["C0", "C3", "C1"],
+        )
+        plt.ylabel("Velocity Ratio")
+        plt.title(f"Galaxy {galaxy} Velocity Ratios")
+        plt.savefig(savepath + f"{galaxy}_velocity_ratios.png")
+        plt.close()
+
+
+if __name__ == "__main__":
+    main()

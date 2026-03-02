@@ -131,7 +131,7 @@ class HernquistFit:
                     min=6, max=13
                 )  # allow log_M_b to vary between 6 and 13
                 params["log_a"].set(
-                    min=-1, max=2
+                    min=-3, max=2
                 )  # allow a to vary between 0.1 and 100 kpc
                 r_eval = x
                 y_eval = y
@@ -301,7 +301,7 @@ class DehnenFit:
                     min=6, max=13
                 )  # allow log_M_b to vary between 6 and 13
                 params["log_a"].set(
-                    min=-1, max=2
+                    min=-3, max=2
                 )  # allow a to vary between 0.1 and 100 kpc
                 r_eval = x
                 y_eval = y
