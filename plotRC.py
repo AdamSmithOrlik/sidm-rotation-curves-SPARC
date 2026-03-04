@@ -33,7 +33,8 @@ def main():
     #     plt.savefig(savepath + f"{galaxy}_RC.png")
     #     plt.close()
 
-    for galaxy in galaxy_IDs:
+    results = []
+    for igx, galaxy in enumerate(galaxy_IDs):
         df, units_df, distance = get_rc_data(galaxy)
 
         vdisk = df["Vdisk"].values.sum(axis=0)
@@ -45,16 +46,89 @@ def main():
         vbul_ratio = vbul / vc_total
         vgas_ratio = vgas / vc_total
 
-        plt.figure(figsize=(6, 4))
-        plt.bar(
-            ["Disk", "Bulge", "Gas"],
-            [vdisk_ratio, vbul_ratio, vgas_ratio],
-            color=["C0", "C3", "C1"],
+        results.append(
+            {
+                "Galaxy": galaxy,
+                "igx": igx,
+                "Vdisk Ratio": vdisk_ratio,
+                "Vbul Ratio": vbul_ratio,
+                "Vgas Ratio": vgas_ratio,
+            }
         )
-        plt.ylabel("Velocity Ratio")
-        plt.title(f"Galaxy {galaxy} Velocity Ratios")
-        plt.savefig(savepath + f"{galaxy}_velocity_ratios.png")
-        plt.close()
+
+        # plt.figure(figsize=(6, 4))
+        # plt.bar(
+        #     ["Disk", "Bulge", "Gas"],
+        #     [vdisk_ratio, vbul_ratio, vgas_ratio],
+        #     color=["C0", "C3", "C1"],
+        # )
+        # plt.ylabel("Velocity Ratio")
+        # plt.title(f"Galaxy {galaxy} Velocity Ratios")
+        # plt.savefig(savepath + f"{galaxy}_velocity_ratios.png")
+        # plt.close()
+
+    results_df = pd.DataFrame(
+        results, columns=["Galaxy", "igx", "Vdisk Ratio", "Vbul Ratio", "Vgas Ratio"]
+    )
+
+    plt.figure(figsize=(6, 4))
+
+    plt.scatter(
+        results_df["igx"],
+        results_df["Vdisk Ratio"] / results_df["Vgas Ratio"],
+        label="Disk/Gas",
+        color="k",
+        s=10,
+    )
+    plt.scatter(
+        results_df["igx"],
+        results_df["Vdisk Ratio"] / results_df["Vbul Ratio"],
+        label="Disk/Bulge",
+        color="grey",
+        s=10,
+    )
+
+    plt.axhline(1, color="k", linestyle="--", label="Equal Contribution")
+    plt.xlabel("Galaxy Index (igx)")
+    plt.ylabel("Velocity Ratio (Disk/Gas and Disk/Bulge)")
+    plt.legend(loc="upper left")
+
+    plt.tight_layout()
+    plt.savefig(savepath + "velocity_comparison.png")
+    plt.close()
+
+    # plt.figure(figsize=(6, 4))
+    # plt.scatter(
+    #     results_df["igx"],
+    #     results_df["igx"] * results_df["Vdisk Ratio"],
+    #     label="Disk",
+    #     color="C0",
+    #     s=10,
+    # )
+    # plt.scatter(
+    #     results_df["igx"],
+    #     results_df["igx"] * results_df["Vbul Ratio"],
+    #     label="Bulge",
+    #     color="C3",
+    #     s=10,
+    # )
+    # plt.scatter(
+    #     results_df["igx"],
+    #     results_df["igx"] * results_df["Vgas Ratio"],
+    #     label="Gas",
+    #     color="C1",
+    #     s=10,
+    # )
+    # plt.plot(
+    #     results_df["igx"], results_df["igx"], label="Total", color="k", linestyle="--"
+    # )
+    # plt.xlabel("Galaxy Index (igx)")
+    # plt.ylabel("Velocity Ratio * Galaxy Index")
+    # plt.legend(loc="upper left")
+
+    # plt.tight_layout()
+    # plt.savefig(savepath + "velocity_ratios_comparison.png")
+    # plt.close()
 
 
 if __name__ == "__main__":

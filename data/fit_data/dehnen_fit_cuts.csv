@@ -20,7 +20,7 @@ UGC07399,pass,pass,fail,pass
 NGC2841,pass,fail,pass,fail
 F567-2,fail,pass,fail,pass
 NGC2403,pass,pass,pass,pass
-NGC4010,pass,pass,pass,pass
+NGC4010,pass,pass,fail,pass
 F574-1,pass,pass,fail,pass
 NGC0300,pass,pass,pass,pass
 NGC3741,pass,pass,fail,pass
@@ -29,7 +29,7 @@ PGC51017,fail,pass,pass,pass
 CamB,pass,pass,fail,pass
 UGC07866,fail,pass,fail,pass
 F574-2,fail,pass,fail,pass
-NGC2915,pass,pass,fail,pass
+NGC2915,pass,pass,pass,pass
 UGC08490,pass,pass,pass,pass
 UGC07524,pass,pass,fail,pass
 UGC05721,pass,pass,pass,pass
@@ -37,7 +37,7 @@ ESO563-G021,pass,fail,pass,pass
 UGC00191,pass,pass,fail,pass
 ESO116-G012,pass,pass,pass,pass
 NGC3521,pass,fail,pass,pass
-NGC5985,pass,pass,pass,fail
+NGC5985,pass,pass,fail,fail
 UGC05918,pass,pass,fail,pass
 UGC06930,pass,pass,fail,pass
 NGC1090,pass,pass,pass,pass
@@ -60,9 +60,9 @@ UGC04305,pass,pass,fail,pass
 UGC06446,pass,pass,fail,pass
 NGC3953,pass,pass,fail,pass
 NGC6789,fail,pass,fail,pass
-UGC07232,fail,pass,pass,pass
+UGC07232,fail,pass,fail,pass
 UGC03546,pass,fail,pass,fail
-NGC6503,pass,pass,pass,pass
+NGC6503,pass,fail,pass,pass
 UGC05005,pass,pass,fail,pass
 UGC07690,fail,pass,pass,pass
 UGC00634,fail,pass,pass,pass
@@ -75,7 +75,7 @@ ESO444-G084,fail,pass,pass,pass
 F565-V2,fail,pass,fail,pass
 UGC10310,fail,pass,fail,pass
 NGC5055,pass,pass,pass,pass
-NGC0801,pass,fail,pass,pass
+NGC0801,pass,pass,pass,pass
 F563-1,pass,pass,fail,pass
 NGC6946,pass,fail,pass,fail
 UGC06614,pass,pass,pass,fail
@@ -101,7 +101,7 @@ UGC09037,pass,pass,pass,pass
 NGC4051,fail,fail,fail,pass
 F571-8,pass,pass,pass,pass
 D564-8,fail,pass,pass,pass
-UGC00891,fail,pass,pass,pass
+UGC00891,fail,pass,fail,pass
 NGC2998,pass,pass,pass,pass
 NGC0055,pass,pass,fail,pass
 NGC2683,pass,fail,pass,fail
@@ -129,7 +129,7 @@ NGC4068,fail,pass,fail,pass
 UGC00731,pass,pass,fail,pass
 UGC07608,pass,pass,fail,pass
 UGC05750,pass,pass,fail,pass
-UGCA442,pass,pass,pass,pass
+UGCA442,pass,pass,fail,pass
 UGC04278,pass,pass,fail,pass
 UGC07151,pass,pass,fail,pass
 NGC3972,pass,pass,fail,pass
@@ -142,7 +142,7 @@ UGC12732,pass,pass,fail,pass
 DDO168,pass,pass,pass,pass
 NGC2903,pass,fail,pass,pass
 UGC02455,pass,pass,pass,pass
-UGC02023,fail,pass,pass,pass
+UGC02023,fail,pass,fail,pass
 DDO064,pass,pass,fail,pass
 UGC05986,pass,pass,pass,pass
 UGCA281,fail,pass,pass,pass
@@ -153,7 +153,7 @@ UGC08550,pass,pass,pass,pass
 UGC02953,pass,fail,pass,fail
 NGC4138,fail,pass,pass,fail
 NGC0247,pass,pass,fail,pass
-IC4202,pass,fail,pass,fail
+IC4202,pass,fail,fail,fail
 UGC08286,pass,pass,fail,pass
 IC2574,pass,pass,fail,pass
 NGC4559,pass,pass,pass,pass
@@ -167,10 +167,10 @@ UGC02916,pass,pass,pass,fail
 UGC06923,fail,pass,fail,pass
 UGC04483,pass,pass,fail,pass
 NGC4217,pass,fail,pass,fail
-NGC3109,pass,pass,pass,pass
+NGC3109,pass,pass,fail,pass
 UGC05764,pass,pass,fail,pass
 NGC3949,fail,pass,pass,pass
 D512-2,fail,pass,pass,pass
 NGC4389,fail,pass,fail,pass
 NGC4157,pass,fail,pass,fail
-DDO161,pass,pass,pass,pass
+DDO161,pass,pass,fail,pass

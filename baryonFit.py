@@ -125,13 +125,13 @@ class HernquistFit:
                 # create the lmfit model
                 model = Model(hernquist_model)
                 params = model.make_params(
-                    log_M_b=10, log_a=0
+                    log_M_b=10.0, log_a=0.0
                 )  # in log10 space for better convergence
                 params["log_M_b"].set(
-                    min=6, max=13
+                    min=6.0, max=13.0
                 )  # allow log_M_b to vary between 6 and 13
                 params["log_a"].set(
-                    min=-3, max=2
+                    min=-4.0, max=2.0
                 )  # allow a to vary between 0.1 and 100 kpc
                 r_eval = x
                 y_eval = y
@@ -161,7 +161,7 @@ class HernquistFit:
                 # time the fit method
                 start = t.time()
                 # perform the curve fit
-                popt, pcov = curve_fit(hernquist_model, x, y, p0=[10, 0])
+                popt, pcov = curve_fit(hernquist_model, x, y, p0=[10.0, 0.0])
 
                 print(f"Fitting with curve_fit took {t.time() - start:.4f} seconds")
 
@@ -292,16 +292,16 @@ class DehnenFit:
                 # create the lmfit model
                 model = Model(dehnen_model)
                 params = model.make_params(
-                    log_M_b=10, log_a=0, gamma=1
+                    log_M_b=10.0, log_a=0.0, gamma=1.0
                 )  # in log10 space for better convergence
                 params["gamma"].set(
-                    min=-3.0, max=3.0
+                    min=1e-4, max=2.0
                 )  # allow gamma to vary between -3 and 3
                 params["log_M_b"].set(
-                    min=6, max=13
+                    min=6.0, max=13.0
                 )  # allow log_M_b to vary between 6 and 13
                 params["log_a"].set(
-                    min=-3, max=2
+                    min=-4.0, max=2.0
                 )  # allow a to vary between 0.1 and 100 kpc
                 r_eval = x
                 y_eval = y
@@ -337,8 +337,8 @@ class DehnenFit:
                     dehnen_model,
                     x,
                     y,
-                    p0=[10, 0, 1],
-                    # bounds=([6, 0.0, 0.0], [50, 100.0, 2.95]),
+                    p0=[10.0, 0.0, 1.0],
+                    bounds=([6.0, -4.0, 0.0], [13.0, 2.0, 2.0]),
                 )
 
                 print(f"Fitting with curve_fit took {t.time() - start:.4f} seconds")
@@ -361,7 +361,7 @@ class DehnenFit:
         return M_b_fit, a_fit, gamma_fit, error
 
     # Method to compute vc and phi using fitted parameters
-    def vc(self, r, M_b=1e10, a=1, gamma=1):
+    def vc(self, r, M_b=1e0, a=1, gamma=1):
         """
         Creates the Hernquist circular velocity model using the fitted parameters.
         Takes:
