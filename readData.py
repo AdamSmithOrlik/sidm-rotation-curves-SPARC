@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import glob
 
-path = os.getcwd() + "/data/"
+path = os.getcwd() + "/../data/"
 
 
 def get_galaxy_ids():
@@ -217,7 +217,7 @@ def Gamma_disk(galaxy):
     df, _ = get_ML_data(galaxy)
     numerator = np.sum(df["Ydisk"] / df["e_Ydisk"] ** 2)
     denominator = np.sum(1 / df["e_Ydisk"] ** 2)
-    gamma = np.divide(numerator, denominator)
+    gamma = numerator / denominator
 
     # uncertainty in gamma
     sigma_gamma_sq = 1 / denominator
@@ -245,7 +245,7 @@ def Gamma_bulge(galaxy):
         return 0.0, 0.0
     numerator = np.sum(df["Ybul"] / df["e_Ybul"] ** 2)
     denominator = np.sum(1 / df["e_Ybul"] ** 2)
-    gamma = np.divide(numerator, denominator)
+    gamma = numerator / denominator
 
     # uncertainty in gamma
     sigma_gamma_sq = 1 / denominator
@@ -258,12 +258,38 @@ def Gamma_bulge(galaxy):
     return gamma, sigma_eff
 
 
+def log_M200_weighted_mean(galaxy):
+    """
+    Calculates weighted mean of log_M200 values across different mass models for a given galaxy.
+    Takes:
+        galaxy : galaxy ID string
+    Returns:
+        log_M200_mean : weighted mean of log_M200 values
+        sigma_eff : uncertainty in log_M200_mean
+    """
+    df, _ = get_ML_data(galaxy)
+    numerator = np.sum(df["log_M200"] / df["e_log_M200"] ** 2)
+    denominator = np.sum(1 / df["e_log_M200"] ** 2)
+    log_M200_mean = numerator / denominator
+    # uncertainty in log_M200_mean
+    sigma_log_M200_sq = 1 / denominator
+
+    # add spread in log_M200 values since they are correlated
+    w = 1 / df["e_log_M200"] ** 2
+    spread_sq = np.sum(w * (df["log_M200"] - log_M200_mean) ** 2) / np.sum(w)
+    sigma_eff = np.sqrt(sigma_log_M200_sq + spread_sq)
+
+    return log_M200_mean, sigma_eff
+
+
 # for testing
 def main():
     gd, ed = Gamma_disk("NGC5371")
     gb, eb = Gamma_bulge("NGC5371")
+    lm, el = log_M200_weighted_mean("NGC5371")
     print(f"Disk Gamma: {gd} +/- {ed}")
     print(f"Bulge Gamma: {gb} +/- {eb}")
+    print(f"Weighted Mean log(M200): {lm} +/- {el}")
 
     return None
 
