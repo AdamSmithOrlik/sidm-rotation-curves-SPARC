@@ -82,19 +82,19 @@ def log_likelihood(theta, df, Phi_b):
     try:
         profile = jeans.squashed(r1, M200, c, Phi_b=Phi_b)
         if profile is None:
-            return -np.inf, None
+            return -np.inf, None, None
     except Exception as e:
         print(f"Error in jeans-profile at {theta}, with Error {e}")
-        return -np.inf, None
+        return -np.inf, None, None
 
     try:
         v_model = profile.V(df["Rad"], Lmax=0)
     except Exception as e:
         print(f"Error in rotation curve at {theta}, with Error {e}")
-        return -np.inf, None
+        return -np.inf, None, None
         # 1. Check: Sind die Modellwerte valide Zahlen?
     if not np.all(np.isfinite(v_model)):
-        return -np.inf, None
+        return -np.inf, None, None
 
         # Chi-2 Calc
     diff = df["Vobs"] - v_model
@@ -102,19 +102,21 @@ def log_likelihood(theta, df, Phi_b):
 
     # 2. Check: Ist das Ergebnis von Chi2 valide? (Wichtig!)
     if not np.isfinite(chi2) or np.isnan(chi2):
-        return -np.inf, None
+        return -np.inf, None, FileNotFoundError
 
     cross_section = profile.cross_section()
 
-    return -0.5 * chi2, cross_section
+    vrel = profile.inner.vrel
+
+    return -0.5 * chi2, cross_section, vrel
 
 
 def log_probability(theta, df, Phi_b):
     lp = log_prior(theta)
     if not np.isfinite(lp):
-        return -np.inf, None
-    ll, cross_section = log_likelihood(theta, df, Phi_b)
-    return lp + ll, cross_section
+        return -np.inf, None, None
+    ll, cross_section, vrel = log_likelihood(theta, df, Phi_b)
+    return lp + ll, cross_section, vrel
 
 
 # Main Function of the MCMC
@@ -175,6 +177,7 @@ def sidm_MCMC(
     # Blob dtype for cross-section
     dtypes = [
         ("cross-section", float),
+        ("vrel", float),
     ]
 
     if resume:
