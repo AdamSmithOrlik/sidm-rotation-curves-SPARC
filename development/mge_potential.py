@@ -34,21 +34,22 @@ class BaryonicModel:
         self.R      = self.data["Rad"].values # [kpc]
         self.SBdisk = self.data["SBdisk"].values # [Lsun/pc^2] at M/L=1
         self.SBbul  = self.data["SBbul"].values # [Lsun/pc^2] at M/L=1
+        self.Vdisk  = self.data["Vdisk"].values  # [km/s]
         self.Vbul   = self.data["Vbul"].values  # [km/s]
         self.Vgas   = self.data["Vgas"].values  # [km/s]
 
         mass, _ = get_mass_data(galaxy)
-        self.dist, dist_err =  mass["D"], mass["e_D"] # [Mpc]
-        self.incl, self.incl_err = mass["Inc"], mass["e_Inc"] # [deg]
+        self.dist, self.dist_err =  mass["D"].values[0], mass["e_D"].values[0] # [Mpc]
+        self.incl, self.incl_err = mass["Inc"].values[0], mass["e_Inc"].values[0] # [deg]
 
         # build all components once, at Upsilon = 1
         # each entry: dict(tag, sigma_k, Sigma0_k, q, phi, vcirc, route)
         self.components = []
         self._add_disk()
-        self._add_bulge()
+        self._add_bulge()     
         self._add_gas()
 
-    # core MGE potential math (single component, Upsilon = 1)
+    # MGE potential math (single component, Upsilon = 1)
     @staticmethod
     def _masses(sigma_k, Sigma0_k):
         """Msun mass of each Gaussian (q-independent).  Sigma0 [Msun/pc^2], sigma [kpc]."""
@@ -90,7 +91,7 @@ class BaryonicModel:
         self.components.append(dict(tag=tag, sigma_k=sigma_k, Sigma0_k=Sigma0_k,
                                     q=q, phi=phi, vcirc=vcirc, route=route))
 
-    # component builders (all at Upsilon = 1)
+    # INTERNAL FITTING ROUTINES
     def _fit_sb_mge(self, SB, ngauss):
         """1D MGE of a surface-brightness profile -> (sigma_k [kpc], Sigma0_k [Lsun/pc^2])."""
         m = np.isfinite(SB) & (SB > 0) & np.isfinite(self.R) & (self.R > 0)
@@ -158,58 +159,82 @@ class BaryonicModel:
             route = f"Vbul-inversion ({why})"
         self._register("b", sigma, Sigma0, self.qbul, route=route)
 
-    # public interface
+    # CALLABLES
     def _scale(self, Upsilond, Upsilonb):
         return {"d": Upsilond, "b": Upsilonb, "g": 1.0}
-
-    def potential(self, r, th, Upsilond=1.0, Upsilonb=1.0):
-        """Total baryonic potential Phi(r, theta) in (km/s)^2.  Gas is never scaled."""
+ 
+    def potential(self, r, th, Upsilond=1.0, Upsilonb=1.0, D=None):
+        """
+        Total baryonic potential Phi(r, theta) in (km/s)^2.  Gas is never scaled.
+        D : if given, evaluate at true distance D [Mpc] via the exact scaling
+            Phi(r; D) = (D/D0) * Phi_fid(r * D0/D),  D0 = catalog distance.
+        """
+        a = 1.0 if D is None else float(D)/self.dist
         scalar = np.isscalar(r) and np.isscalar(th)
         r = np.asarray(r, float); th = np.asarray(th, float)
-        R, z = r*np.sin(th), r*np.cos(th)
+        R, z = (r/a)*np.sin(th), (r/a)*np.cos(th)
         s = self._scale(Upsilond, Upsilonb)
-        out = sum(s[c["tag"]]*c["phi"](R, z) for c in self.components)
+        out = a*sum(s[c["tag"]]*c["phi"](R, z) for c in self.components)
         return float(np.squeeze(out)) if scalar else out
-
-    def potential_function(self, Upsilond=1.0, Upsilonb=1.0):
-        """Return a callable phi(r, th) with the M/Ls baked in -- hand this to the Jeans model."""
+ 
+    def potential_function(self, Upsilond=1.0, Upsilonb=1.0, D=None):
+        """Return a callable phi(r, th) with M/Ls (and optional distance) baked in."""
         def phi(r, th):
-            return self.potential(r, th, Upsilond, Upsilonb)
+            return self.potential(r, th, Upsilond, Upsilonb, D)
         return phi
-
-    def vcirc(self, R=None, Upsilond=1.0, Upsilonb=1.0, which="total"):
+ 
+    def vcirc(self, R=None, Upsilond=1.0, Upsilonb=1.0, which="total", D=None):
         """
         In-plane baryonic circular velocity [km/s].
         which : 'total' | 'disk' | 'bulge' | 'gas'
+        D     : optional true distance [Mpc];  V_c(R;D)=sqrt(D/D0)*V_c_fid(R*D0/D).
         """
         if R is None:
             R = self.R
+        a = 1.0 if D is None else float(D)/self.dist
+        R = np.asarray(R, float); Rq = R/a
         s = self._scale(Upsilond, Upsilonb)
         tags = {"disk": "d", "bulge": "b", "gas": "g"}
         if which == "total":
-            v2 = sum(s[c["tag"]]*c["vcirc"](R)**2 for c in self.components)
+            v2 = sum(s[c["tag"]]*c["vcirc"](Rq)**2 for c in self.components)
         else:
             comp = [c for c in self.components if c["tag"] == tags[which]]
-            v2 = s[tags[which]]*comp[0]["vcirc"](R)**2 if comp else np.zeros_like(np.atleast_1d(R), float)
-        return np.sqrt(np.clip(v2, 0, None))
-
-    def model_curves(self, Upsilond=1.0, Upsilonb=1.0, R=None):
+            v2 = s[tags[which]]*comp[0]["vcirc"](Rq)**2 if comp else np.zeros_like(np.atleast_1d(R), float)
+        return np.sqrt(np.clip(a*v2, 0, None))
+ 
+    def model_curves(self, Upsilond=1.0, Upsilonb=1.0, R=None, D=None):
         """Dict of model V_c curves for comparison with the SPARC data columns."""
         if R is None:
             R = self.R
         return dict(R=R,
-                    Vdisk=self.vcirc(R, Upsilond, Upsilonb, "disk"),
-                    Vbul=self.vcirc(R, Upsilond, Upsilonb, "bulge"),
-                    Vgas=self.vcirc(R, Upsilond, Upsilonb, "gas"),
-                    Vbar=self.vcirc(R, Upsilond, Upsilonb, "total"))
-
+                    Vdisk=self.vcirc(R, Upsilond, Upsilonb, "disk", D),
+                    Vbul=self.vcirc(R, Upsilond, Upsilonb, "bulge", D),
+                    Vgas=self.vcirc(R, Upsilond, Upsilonb, "gas", D),
+                    Vbar=self.vcirc(R, Upsilond, Upsilonb, "total", D))
+ 
+    def vobs_at_inclination(self, incl):
+        """
+        Inclination-corrected Vobs for the likelihood (inclination does NOT enter Phi).
+        Vobs scales as sin(i0)/sin(i); returns (R_phys, Vobs_corr, errV_corr) at the
+        sampled inclination.  R_phys is unchanged by inclination.
+        """
+        f = np.sin(np.radians(self.incl))/np.sin(np.radians(incl))
+        return (self.R,
+                self.data["Vobs"].values*f,
+                self.data["errV"].values*f)
+ 
+    def data_radii(self, D=None):
+        """Physical data radii at true distance D:  R_phys = R_fid * (D/D0)."""
+        a = 1.0 if D is None else float(D)/self.dist
+        return self.R*a
+ 
     def component_masses(self, Upsilond=1.0, Upsilonb=1.0):
         """Total mass [Msun] of each component at the given M/Ls."""
         s = self._scale(Upsilond, Upsilonb)
         names = {"d": "disk", "b": "bulge", "g": "gas"}
         return {names[c["tag"]]: s[c["tag"]]*self._masses(c["sigma_k"], c["Sigma0_k"]).sum()
                 for c in self.components}
-
+ 
     def __repr__(self):
         parts = ", ".join(f"{c['tag']}:{c['route']}" for c in self.components)
         return (f"BaryonicModel({self.galaxy}, qdisk={self.qdisk}, "
