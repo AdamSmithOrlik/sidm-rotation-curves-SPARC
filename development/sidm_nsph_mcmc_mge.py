@@ -13,35 +13,10 @@ import argparse
 # GalaxyID = "F568-3" # test galaxy
 # Command line input for the GalaxyID
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    'GALAXYID', 
-    type=str, 
-    help='The Galaxy ID for the SPARC dataset.')
-
+parser.add_argument('GALAXYID', type=str, help='...')
+parser.add_argument('QDISK', type=float, help='...')
 args = parser.parse_args()
-GALAXYID = args.GALAXYID
-
-parser.add_argument(
-    'QDISK', 
-    type=float, 
-    help='The disk flattening ratio.')
-
-args = parser.parse_args()
-QDISK = args.QDISK
-
-# # Load baryon fit parameters for potential calculation
-# baryon_fit_data = pd.read_csv(os.getcwd() + "/../data/baryon-fits/hern_fits.csv")
-# baryon_data = baryon_fit_data[baryon_fit_data["GalaxyID"] == GALAXYID]
-# M_b_fit = baryon_data["M_b_fit"].values[0]  # solar masses
-# a_fit = baryon_data["a_fit"].values[0]  # kpc
-
-# # Load the rotation curve data
-# data, _, _ = get_rc_data(GALAXYID)
-# r_data = data["Rad"].values  # kpc
-# array_size = len(r_data)  # for blobs
-# min_r = np.min(r_data)  # likelihood to 0 below min radius in data
-# v_data = data["Vobs"].values  # km/s
-# v_err = data["errV"].values  # km/s
+GALAXYID, QDISK = args.GALAXYID, args.QDISK
 
 
 ######################################################################
@@ -70,6 +45,9 @@ def c_MCR(M200):
 
     return c
 
+######################################################################
+########################## PRIOR FUNCTIONS ###########################
+######################################################################
 def logc_prior(theta):
     """
     Use:
@@ -79,7 +57,7 @@ def logc_prior(theta):
     Returns:
         The likelihood for log(c)
     """
-    _, logM200, log_c, _, _, _, _ = theta
+    _, logM200, log_c, _, _, _, _, _ = theta
     M200 = 10**logM200
     cMCR = c_MCR(M200)
     
@@ -152,27 +130,28 @@ def model(theta, bar, **kwargs):
 
 
 def likelihood(theta, bar, **kwargs):
+    
+    # total rotation curve with inclination and distance
+    _, _, _, _, _, _, inclination, distance = theta
+    _, v_data, v_err = bar.vobs_at_inclination(inclination)
+    r_data = bar.data_radii(D=distance)
+    array_size = len(r_data)  # set the array size for the rotation curve
+    
     try:
         profile = model(theta, bar, **kwargs)
         if profile is None:
             print(f"Jeans model returned None for theta: {theta}")
-            return -np.inf, None, None, None
+            return -np.inf, np.nan, np.full(array_size, np.nan), np.nan
     except Exception as e:
         print(f"Jeans model error for theta: {theta}\nError: {e}")
-        return -np.inf, None, None, None
-    
-    r1, M200, c, q0, upsilon_disk, upsilon_bulge, inclination, distance = transform(theta)
-
-    # total rotation curve with inclination and distance
-    _, v_data, v_err = bar.vobs_at_inclination(inclination)
-    r_data = bar.data_radii(D=distance)
+        return -np.inf, np.nan, np.full(array_size, np.nan), np.nan
     
     # Calculate the model rotation curve at the data radii
     try:
         v_model = profile.V(r_data, Lmax=2) # Lmax=2 for nonspherical Jeans model
     except Exception as e:
         print(f"Rotation curve calculation error for theta: {theta}\nError: {e}")
-        return -np.inf, None, None, None
+        return -np.inf, np.nan, np.full(array_size, np.nan), np.nan
 
     # Chi-squared
     chi_squared = np.sum(((v_data - v_model) / v_err) ** 2)
@@ -190,20 +169,22 @@ def ln_prior(theta, bar):
     r1, logM200, dlogc, q0, log_upsilon_disk, log_upsilon_bulge, inclination, distance = theta
     
     c = 10**dlogc
+    
+    r_data = bar.data_radii(D=distance)
+    rmin = np.min(r_data)
 
-    r1_condition = min_r < r1 < 500.0
+    r1_condition = rmin < r1 < 500.0
     
     # uniform prior on logM200 between 1e8 and 1e15 Msun
     logM200_condition = 8.0 < logM200 < 15.0
     
-    c_condition = 1.0 < c < 30.0  # corresponds to logc between 0 and 2
+    c_condition = 1.0 < c < 50.0  # corresponds to logc between 0 and 2
     
     inclination_condition = 0.0 < inclination <= 90.0
     
-    # c between 1 and 100, which corresponds to logc between 0 and 2
-    # logc_condition = 0.0 < dlogc < 2.0
+    q0_condition = 0.1 < q0 <= 2.0
 
-    conditions = r1_condition and logM200_condition and c_condition and inclination_condition
+    conditions = r1_condition and logM200_condition and c_condition and inclination_condition and q0_condition
 
     if not conditions:
         return -np.inf
@@ -212,21 +193,27 @@ def ln_prior(theta, bar):
 
     # gaussian prior on logc
     lp_logc = logc_prior(theta)
-    return lp_logc
+    lp_log_upsilon_disk = log_upsilon_disk_prior(theta)
+    lp_log_upsilon_bulge = log_upsilon_bulge_prior(theta)
+    lp_inclination = inclination_prior(theta, bar)
+    lp_distance = distance_prior(theta, bar)
+    return lp_logc + lp_log_upsilon_disk + lp_log_upsilon_bulge + lp_inclination + lp_distance
 
 
 def ln_prob(theta, bar, **kwargs):
+    
+    array_size = len(bar.R)  # set the array size for the rotation curve
 
     lp = ln_prior(theta, bar) 
     if not np.isfinite(lp):
-        return -np.inf, None, None, None
+        return -np.inf, np.nan, np.full(array_size, np.nan), np.nan
 
     try:
         lk, cross_section, v_model, vrel = likelihood(theta, bar,**kwargs)
         # lk = likelihood(theta, **kwargs)
     except Exception as e:
         print(f"Likelihood calculation error for theta: {theta}: {e}")
-        return -np.inf, None, None, None
+        return -np.inf, np.nan, np.full(array_size, np.nan), np.nan
 
     return lp + lk, cross_section, v_model, vrel
 
@@ -282,6 +269,8 @@ def run_emcee(
     resume = os.path.exists(filename)
     if resume and save:
         print(f"Resuming from existing file: {filename}")
+        
+    array_size = len(baryonic_model.R) # set the array size for the rotation curve 
 
     dtypes = [
         ("cross-section", float),
@@ -395,7 +384,7 @@ def main():
     print(f"Initial theta: {initial_theta}")
     
     savepath = f'/scratch/adamso/sparc-results/mcmc-chains/'
-    filename = savepath + f"{GALAXYID}_sph_mcmc_nw_{NWALKERS}_ni_{NITER}.h5"
+    filename = savepath + f"{GALAXYID}_nsph_mcmc_nw_{NWALKERS}_qdisk_{QDISK}.h5"
 
     run_emcee(
         initial_theta,

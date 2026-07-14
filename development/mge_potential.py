@@ -239,3 +239,18 @@ class BaryonicModel:
         parts = ", ".join(f"{c['tag']}:{c['route']}" for c in self.components)
         return (f"BaryonicModel({self.galaxy}, qdisk={self.qdisk}, "
                 f"qbul={self.qbul}, qgas={self.qgas} | {parts})")
+        
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["components"] = [{k: c[k] for k in ("tag","sigma_k","Sigma0_k","q","route")}
+                            for c in self.components]      # drop unpicklable closures
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        rebuilt = []
+        for c in self.components:
+            phi, vcirc = self._make_component_potential(c["sigma_k"], c["Sigma0_k"], c["q"])
+            c = dict(c); c["phi"], c["vcirc"] = phi, vcirc
+            rebuilt.append(c)
+        self.components = rebuilt
