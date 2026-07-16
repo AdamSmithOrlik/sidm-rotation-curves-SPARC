@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import emcee
 import jeans
-from mge_potential import BaryonicModel
+from mge_potential import BaryonicModel, TabulatedBaryons
 from multiprocessing import Pool
 import time as t
 
@@ -119,17 +119,18 @@ def distance_prior(theta, bar):
 ######################################################################
 ########################## MCMC FUNCTIONS ############################
 ######################################################################
-def model(theta, bar, **kwargs):
+def model(theta, tab, **kwargs):
     r1, M200, c, q0, upsilon_disk, upsilon_bulge, inclination, distance = transform(theta)
 
-    phi = bar.potential_function(Upsilond=upsilon_disk, Upsilonb=upsilon_bulge, D=distance)   # phi(r, th)
-
+    # phi = bar.tabulated_potential_function(Upsilond=upsilon_disk, Upsilonb=upsilon_bulge, D=distance, rmax=500.0)   # phi(r, th)
+    phi = tab.potential_function(Upsilond=upsilon_disk, Upsilonb=upsilon_bulge, D=distance)
+    
     profile = jeans.squashed(r1, M200, c, q0=q0, Phi_b=phi, **kwargs)
 
     return profile
 
 
-def likelihood(theta, bar, **kwargs):
+def likelihood(theta, bar, tab, **kwargs):
     
     # total rotation curve with inclination and distance
     _, _, _, _, _, _, inclination, distance = theta
@@ -138,7 +139,7 @@ def likelihood(theta, bar, **kwargs):
     array_size = len(r_data)  # set the array size for the rotation curve
     
     try:
-        profile = model(theta, bar, **kwargs)
+        profile = model(theta, tab, **kwargs)
         if profile is None:
             print(f"Jeans model returned None for theta: {theta}")
             return -np.inf, np.nan, np.full(array_size, np.nan), np.nan
@@ -165,7 +166,7 @@ def likelihood(theta, bar, **kwargs):
     return log_likelihood, cross_section, v_model, vrel
 
 
-def ln_prior(theta, bar):
+def ln_prior(theta, bar, tab):
     r1, logM200, dlogc, q0, log_upsilon_disk, log_upsilon_bulge, inclination, distance = theta
     
     c = 10**dlogc
@@ -200,16 +201,16 @@ def ln_prior(theta, bar):
     return lp_logc + lp_log_upsilon_disk + lp_log_upsilon_bulge + lp_inclination + lp_distance
 
 
-def ln_prob(theta, bar, **kwargs):
+def ln_prob(theta, bar, tab, **kwargs):
     
     array_size = len(bar.R)  # set the array size for the rotation curve
 
-    lp = ln_prior(theta, bar) 
+    lp = ln_prior(theta, bar, tab) 
     if not np.isfinite(lp):
         return -np.inf, np.nan, np.full(array_size, np.nan), np.nan
 
     try:
-        lk, cross_section, v_model, vrel = likelihood(theta, bar,**kwargs)
+        lk, cross_section, v_model, vrel = likelihood(theta, bar, tab, **kwargs)
         # lk = likelihood(theta, **kwargs)
     except Exception as e:
         print(f"Likelihood calculation error for theta: {theta}: {e}")
@@ -226,6 +227,7 @@ def run_emcee(
     nwalkers=20,
     niter=100,
     baryonic_model=None,
+    tab=None,
     initial_volume=1e-3,
     p0=None,
     multiprocessing=False,
@@ -294,7 +296,7 @@ def run_emcee(
                     nwalkers,
                     ndim,
                     ln_prob,
-                    args=(baryonic_model,),
+                    args=(baryonic_model, tab),
                     kwargs=relaxation_kwargs,
                     pool=pool,
                     blobs_dtype=dtypes,
@@ -306,7 +308,7 @@ def run_emcee(
                     nwalkers,
                     ndim,
                     ln_prob,
-                    args=(baryonic_model,),
+                    args=(baryonic_model, tab),
                     kwargs=relaxation_kwargs,
                     pool=pool,
                     blobs_dtype=dtypes,
@@ -331,7 +333,7 @@ def run_emcee(
                 nwalkers,
                 ndim,
                 ln_prob,
-                args=(baryonic_model,),
+                args=(baryonic_model, tab),
                 kwargs=relaxation_kwargs,
                 blobs_dtype=dtypes,
                 backend=backend,
@@ -342,7 +344,7 @@ def run_emcee(
                 nwalkers,
                 ndim,
                 ln_prob,
-                args=(baryonic_model,),
+                args=(baryonic_model, tab),
                 kwargs=relaxation_kwargs,
                 blobs_dtype=dtypes,
                 **emcee_kwargs,
@@ -360,8 +362,8 @@ def main():
 
     # relaxation_kwargs = {"AC_prescription": "Cautun"}
     relaxation_kwargs = None
-    NWALKERS = 32
-    NITER = 5000
+    NWALKERS = 16
+    NITER = 20
     cores = NWALKERS // 2
     
     print(f"Running MCMC for galaxy {GALAXYID} with {NWALKERS} walkers and {NITER} iterations.")
@@ -369,6 +371,7 @@ def main():
     # Generate the baryon potential for the given galaxy
     print(f"Generating baryon potential for galaxy {GALAXYID} with qdisk={QDISK}...")
     baryonic_model = BaryonicModel(GALAXYID, qdisk=QDISK, ngauss=8)
+    tab = TabulatedBaryons(baryonic_model, rmax=1000.0) 
     initial_inclination = baryonic_model.incl
     initial_distance = baryonic_model.dist
     initial_log_upsilon_disk = np.log10(0.5)
@@ -383,7 +386,7 @@ def main():
 
     print(f"Initial theta: {initial_theta}")
     
-    savepath = f'/scratch/adamso/sparc-results/mcmc-chains/'
+    savepath = f'{os.getcwd()}/mcmc-results/'
     filename = savepath + f"{GALAXYID}_nsph_mcmc_nw_{NWALKERS}_qdisk_{QDISK}.h5"
 
     run_emcee(
@@ -391,6 +394,7 @@ def main():
         nwalkers=NWALKERS,
         niter=NITER,
         baryonic_model=baryonic_model,
+        tab=tab,
         initial_volume=1e-2,
         multiprocessing=True,
         save=True,
