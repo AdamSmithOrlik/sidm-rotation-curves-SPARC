@@ -1,0 +1,13 @@
+MCMC code
+
+- Add the mass model M/L central values with error instead of 0.5 and 0.7
+- Add a customized starting size vector for each parameter
+- Add support for variable parameters (bulge or no bulge), or a separate file for no bulge
+- Make the spherical version
+- Find the AC criteria Mb-Mdm ratio and test it
+- Start a test run from a large cross section
+
+Analysis
+
+- Add true values for i and D (nuisance parameters)
+-
