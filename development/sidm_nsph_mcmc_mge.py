@@ -362,7 +362,7 @@ def main():
     # relaxation_kwargs = {"AC_prescription": "Cautun"}
     relaxation_kwargs = None
     NWALKERS = 16
-    NITER = 60
+    NITER = 50
     cores = NWALKERS // 2
     
     print(f"Running MCMC for galaxy {GALAXYID} with {NWALKERS} walkers and {NITER} iterations.")
