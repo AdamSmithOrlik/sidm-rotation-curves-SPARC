@@ -14,9 +14,9 @@ import argparse
 # Command line input for the GalaxyID
 parser = argparse.ArgumentParser()
 parser.add_argument('GALAXYID', type=str, help='...')
-parser.add_argument('QDISK', type=float, help='...')
+# parser.add_argument('QDISK', type=float, help='...')
 args = parser.parse_args()
-GALAXYID, QDISK = args.GALAXYID, args.QDISK
+GALAXYID = args.GALAXYID
 
 UPSILON_DISK, UPSILON_DISK_ERR = Gamma_disk(GALAXYID)
 UPSILON_BULGE, UPSILON_BULGE_ERR = Gamma_bulge(GALAXYID)
@@ -173,8 +173,6 @@ def model(theta, bar, **kwargs):
 #     return log_likelihood, cross_section, v_model, vrel
 
 def likelihood(theta, bar, **kwargs):
-    array_size = len(bar.R)
-
     _, _, _, _, _, _, inclination, distance = theta
 
     try:
@@ -578,9 +576,10 @@ def main():
     print(f"Running MCMC for galaxy {GALAXYID} with {NWALKERS} walkers and {NITER} iterations.")
     
     # Generate the baryon potential for the given galaxy
-    print(f"Generating baryon potential for galaxy {GALAXYID} with qdisk={QDISK}...")
-    baryonic_model = BaryonicModel(GALAXYID, qdisk=QDISK, ngauss=8)
-    
+    baryonic_model = BaryonicModel(GALAXYID, qdisk="sparc", ngauss=8)
+    qdisk_str = f"{baryonic_model.qdisk:.3f}"
+    print(f"Generating baryon potential for galaxy {GALAXYID} with qdisk={qdisk_str}...")
+
     initial_inclination = baryonic_model.incl
     initial_distance = baryonic_model.dist
 
@@ -609,7 +608,7 @@ def main():
             ])
     
     savepath = f'{os.getcwd()}/mcmc-results/'
-    filename = savepath + f"{GALAXYID}_nsph_mcmc_nw_{NWALKERS}_qdisk_{QDISK}.h5"
+    filename = savepath + f"{GALAXYID}_nsph_mcmc_nw_{NWALKERS}_qdisk_{qdisk_str}.h5"
 
     run_emcee(
         initial_theta,

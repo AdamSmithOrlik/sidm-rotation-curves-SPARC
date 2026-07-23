@@ -39,10 +39,16 @@ class BaryonicModel:
         self.Vbul   = self.data["Vbul"].values  # [km/s]
         self.Vgas   = self.data["Vgas"].values  # [km/s]
 
-        mass, _ = get_mass_data(galaxy)
-        self.dist, self.dist_err =  mass["D"].values[0], mass["e_D"].values[0] # [Mpc]
-        self.incl, self.incl_err = mass["Inc"].values[0], mass["e_Inc"].values[0] # [deg]
-
+        self.mass, _ = get_mass_data(galaxy)
+        self.dist, self.dist_err =  self.mass["D"].values[0], self.mass["e_D"].values[0] # [Mpc]
+        self.incl, self.incl_err = self.mass["Inc"].values[0], self.mass["e_Inc"].values[0] # [deg]
+        self.Rdisk  = self.mass["Rdisk"].values  # [kpc]
+        
+        _zd = 0.196 * self.Rdisk**0.633 # Lelli et al 2016, Bershady et al. 2010b
+        if self.qdisk == "sparc":
+            self.qdisk = float(_zd / self.Rdisk) 
+            print(f"Using qdisk from SPARC: {self.qdisk}")
+            
         # build all components once, at Upsilon = 1
         # each entry: dict(tag, sigma_k, Sigma0_k, q, phi, vcirc, route)
         self.components = []
@@ -108,18 +114,50 @@ class BaryonicModel:
                   f"median rel err {np.median(rel):.2e}")
         return sigma, Sigma0
 
+    # def _invert_vcirc(self, Vc, q, sig_min, sig_max, ngauss=12, signed=False):
+    #     """Recover a thin/round MGE whose forward V_c matches Vc (NNLS forward model)."""
+    #     R = self.R
+    #     m = np.isfinite(R) & np.isfinite(Vc) & (R > 0)
+    #     Rf, Vf = R[m], Vc[m]
+    #     target = Vf*np.abs(Vf) if signed else Vf**2
+    #     sig = np.geomspace(sig_min, sig_max, ngauss)
+    #     K = np.empty((Rf.size, ngauss))
+    #     for k in range(ngauss):
+    #         _, vck = self._make_component_potential([sig[k]], [1.0], q)
+    #         K[:, k] = vck(Rf)**2
+    #     w = 1.0/(2*(np.abs(Vf) + 10.0))
+    #     Sigma0 = _nonneg_lstsq(K*w[:, None], target*w)
+    #     keep = Sigma0 > 0
+    #     return sig[keep], Sigma0[keep]
+    
     def _invert_vcirc(self, Vc, q, sig_min, sig_max, ngauss=12, signed=False):
-        """Recover a thin/round MGE whose forward V_c matches Vc (NNLS forward model)."""
+        """
+        Recover a thin/round MGE whose forward V_c matches Vc (NNLS forward model).
+
+        Non-positive Vc values are EXCLUDED from the fit: zeros mean "no data /
+        no gas measured at this radius" (not a measurement of zero mass), and the
+        small negatives from a central HI hole are dynamically negligible
+        (|V| < 1 km/s).  Fitting through them drags the model down where the gas
+        IS measured.  Note `signed` is therefore a no-op once the mask is applied.
+
+        sig_min=None -> set adaptively from the smallest surviving radius, so we
+        never fit Gaussians narrower than any data point that constrains them.
+        """
         R = self.R
-        m = np.isfinite(R) & np.isfinite(Vc) & (R > 0)
+        m = np.isfinite(R) & np.isfinite(Vc) & (R > 0) & (Vc > 0)
         Rf, Vf = R[m], Vc[m]
-        target = Vf*np.abs(Vf) if signed else Vf**2
+        if Rf.size < 3:
+            return np.array([]), np.array([])       # nothing usable
+        if sig_min is None:
+            sig_min = max(0.3*Rf.min(), 0.05)
+        ngauss = min(ngauss, max(3, Rf.size))
+        target = Vf**2
         sig = np.geomspace(sig_min, sig_max, ngauss)
         K = np.empty((Rf.size, ngauss))
         for k in range(ngauss):
             _, vck = self._make_component_potential([sig[k]], [1.0], q)
             K[:, k] = vck(Rf)**2
-        w = 1.0/(2*(np.abs(Vf) + 10.0))
+        w = 1.0/(2*(Vf + 10.0))
         Sigma0 = _nonneg_lstsq(K*w[:, None], target*w)
         keep = Sigma0 > 0
         return sig[keep], Sigma0[keep]
@@ -128,12 +166,22 @@ class BaryonicModel:
         sigma, Sigma0 = self._fit_sb_mge(self.SBdisk, self.ngauss)
         self._register("d", sigma, Sigma0, self.qdisk, route="SBdisk-MGE")
 
+    # def _add_gas(self):
+    #     if not np.any(np.abs(self.Vgas) > 1e-3):
+    #         return                                        # no gas contribution
+    #     sigma, Sigma0 = self._invert_vcirc(self.Vgas, self.qgas,
+    #                                        sig_min=1.0, sig_max=self.R.max(),
+    #                                        ngauss=14, signed=True)
+    #     self._register("g", sigma, Sigma0, self.qgas, route="Vgas-inversion")
+    
     def _add_gas(self):
-        if not np.any(np.abs(self.Vgas) > 1e-3):
-            return                                        # no gas contribution
+        if np.count_nonzero(self.Vgas > 0) < 3:
+            return                                        # no usable gas data
         sigma, Sigma0 = self._invert_vcirc(self.Vgas, self.qgas,
-                                           sig_min=1.0, sig_max=self.R.max(),
-                                           ngauss=14, signed=True)
+                                           sig_min=None, sig_max=self.R.max(),
+                                           ngauss=14)
+        if sigma.size == 0:
+            return
         self._register("g", sigma, Sigma0, self.qgas, route="Vgas-inversion")
 
     def _add_bulge(self, pointmass_tol=0.03, min_sb_points=5):
